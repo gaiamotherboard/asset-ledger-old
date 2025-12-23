@@ -1,6 +1,6 @@
 <!--
 Minimal, correct Django asset detail template.
-Shows: asset header, upload scan bundle form, latest scan metadata/status, drives, and activity.
+Shows: asset header, upload scan bundle form, latest scan metadata/status, richer hardware summary, drives, and activity.
 This file replaces the previous template and is intentionally small and stable.
 -->
 
@@ -74,6 +74,177 @@ This file replaces the previous template and is intentionally small and stable.
             <div style="color:#64748b;margin-top:4px;">Condition: {% if latest_scan.cosmetic_condition %}{{ latest_scan.cosmetic_condition }}{% else %}{{ latest_scan.raw_json.intake.cosmetic_condition|default:"" }}{% endif %}</div>
           </div>
         </div>
+
+        {% if rich_summary %}
+          <!-- Rich hardware summary -->
+          <div style="margin-top:8px;">
+            <div style="font-weight:800;margin-bottom:6px;">Hardware Summary</div>
+
+            {% if rich_summary.spec_line %}
+              <div style="margin-bottom:10px;background:#f8fafc;border:1px solid #e6edf3;border-radius:8px;padding:10px;color:#0f172a;">
+                {{ rich_summary.spec_line }}
+              </div>
+            {% endif %}
+
+            <div style="display:flex;flex-wrap:wrap;gap:12px;">
+              <!-- System -->
+              <div style="flex:1 1 300px;min-width:300px;background:#fff;border:1px solid #f1f5f9;border-radius:8px;padding:10px;">
+                <div style="font-weight:800;margin-bottom:6px;">System</div>
+                <div style="color:#64748b;">Vendor</div>
+                <div style="margin-bottom:6px;">{{ rich_summary.system.vendor|default:"—" }}</div>
+                <div style="color:#64748b;">Product</div>
+                <div style="margin-bottom:6px;">{{ rich_summary.system.product|default:"—" }}</div>
+                <div style="color:#64748b;">Serial</div>
+                <div>{{ rich_summary.system.serial|default:"—" }}</div>
+              </div>
+
+              <!-- CPU -->
+              <div style="flex:1 1 300px;min-width:300px;background:#fff;border:1px solid #f1f5f9;border-radius:8px;padding:10px;">
+                <div style="font-weight:800;margin-bottom:6px;">CPU</div>
+                <div style="margin-bottom:6px;">{{ rich_summary.cpu.model|default:"—" }}</div>
+                <div style="color:#64748b;margin-bottom:6px;">
+                  {% if rich_summary.cpu.cores %}{{ rich_summary.cpu.cores }}C{% endif %}
+                  {% if rich_summary.cpu.threads %} / {{ rich_summary.cpu.threads }}T{% endif %}
+                  {% if rich_summary.cpu.max_hz_human %} — {{ rich_summary.cpu.max_hz_human }}{% endif %}
+                </div>
+                <div style="color:#64748b;">Vendor</div>
+                <div>{{ rich_summary.cpu.vendor|default:"—" }}</div>
+              </div>
+
+              <!-- Memory -->
+              <div style="flex:1 1 300px;min-width:300px;background:#fff;border:1px solid #f1f5f9;border-radius:8px;padding:10px;">
+                <div style="font-weight:800;margin-bottom:6px;">Memory</div>
+                <div style="margin-bottom:6px;">Total: {{ rich_summary.memory.total_human|default:"—" }}</div>
+                {% if rich_summary.memory.slots %}
+                  <div style="color:#64748b;margin-bottom:6px;">Slots</div>
+                  <div style="overflow:auto;">
+                    <table style="width:100%;border-collapse:collapse;">
+                      <tr style="text-align:left;border-bottom:1px solid #f1f5f9;">
+                        <th style="padding:4px 6px;">Slot</th>
+                        <th style="padding:4px 6px;">Size</th>
+                        <th style="padding:4px 6px;">Vendor</th>
+                        <th style="padding:4px 6px;">Part</th>
+                      </tr>
+                      {% for ms in rich_summary.memory.slots %}
+                        <tr style="border-bottom:1px solid #f8fafc;">
+                          <td style="padding:4px 6px;">{{ ms.slot|default:"—" }}</td>
+                          <td style="padding:4px 6px;">{{ ms.size_human|default:"—" }}</td>
+                          <td style="padding:4px 6px;">{{ ms.vendor|default:"—" }}</td>
+                          <td style="padding:4px 6px;">{{ ms.product|default:"—" }}</td>
+                        </tr>
+                      {% endfor %}
+                    </table>
+                  </div>
+                {% else %}
+                  <div style="color:#64748b;">No DIMM details detected.</div>
+                {% endif %}
+              </div>
+
+              <!-- Storage -->
+              <div style="flex:1 1 100%;min-width:300px;background:#fff;border:1px solid #f1f5f9;border-radius:8px;padding:10px;">
+                <div style="font-weight:800;margin-bottom:6px;">Storage (internal)</div>
+                {% if rich_summary.drives %}
+                  <div style="overflow:auto;">
+                    <table style="width:100%;border-collapse:collapse;">
+                      <tr style="text-align:left;border-bottom:1px solid #f1f5f9;">
+                        <th style="padding:4px 6px;">Device</th>
+                        <th style="padding:4px 6px;">Transport</th>
+                        <th style="padding:4px 6px;">Model</th>
+                        <th style="padding:4px 6px;">Serial</th>
+                        <th style="padding:4px 6px;">Size</th>
+                        <th style="padding:4px 6px;">SMART</th>
+                        <th style="padding:4px 6px;">POH</th>
+                        <th style="padding:4px 6px;">Temp</th>
+                      </tr>
+                      {% for d in rich_summary.drives %}
+                        <tr style="border-bottom:1px solid #f8fafc;">
+                          <td style="padding:4px 6px;">{{ d.path|default:d.name|default:"—" }}</td>
+                          <td style="padding:4px 6px;">{{ d.tran|default:"—" }}</td>
+                          <td style="padding:4px 6px;">{{ d.model|default:"—" }}</td>
+                          <td style="padding:4px 6px;">{{ d.serial|default:"—" }}</td>
+                          <td style="padding:4px 6px;">{{ d.size_human|default:"—" }}</td>
+                          <td style="padding:4px 6px;">{{ d.smart_overall_health|default:"—" }}</td>
+                          <td style="padding:4px 6px;">{{ d.smart_power_on_hours|default:"—" }}</td>
+                          <td style="padding:4px 6px;">{% if d.smart_temperature_c %}{{ d.smart_temperature_c }}°C{% else %}—{% endif %}</td>
+                        </tr>
+                      {% endfor %}
+                    </table>
+                  </div>
+                {% else %}
+                  <div style="color:#64748b;">No internal disks detected in lsblk.</div>
+                {% endif %}
+              </div>
+
+              <!-- Battery -->
+              <div style="flex:1 1 300px;min-width:300px;background:#fff;border:1px solid #f1f5f9;border-radius:8px;padding:10px;">
+                <div style="font-weight:800;margin-bottom:6px;">Battery</div>
+                {% if rich_summary.battery.present %}
+                  <div style="margin-bottom:6px;">
+                    {{ rich_summary.battery.vendor|default:"" }} {{ rich_summary.battery.model|default:"" }}
+                    {% if rich_summary.battery.serial %}<span style="color:#64748b;">(SN {{ rich_summary.battery.serial }})</span>{% endif %}
+                  </div>
+                  <div style="color:#64748b;margin-bottom:6px;">
+                    {% if rich_summary.battery.capacity_pct %}Health: {{ rich_summary.battery.capacity_pct|floatformat:1 }}%{% endif %}
+                    {% if rich_summary.battery.charge_cycles %} — Cycles: {{ rich_summary.battery.charge_cycles }}{% endif %}
+                  </div>
+                  <div style="color:#64748b;">State / Charge</div>
+                  <div>{{ rich_summary.battery.state|default:"—" }}{% if rich_summary.battery.percentage %} — {{ rich_summary.battery.percentage }}{% endif %}</div>
+                {% else %}
+                  <div style="color:#64748b;">No battery detected (or upower missing).</div>
+                {% endif %}
+              </div>
+
+              <!-- Display -->
+              <div style="flex:1 1 300px;min-width:300px;background:#fff;border:1px solid #f1f5f9;border-radius:8px;padding:10px;">
+                <div style="font-weight:800;margin-bottom:6px;">Display</div>
+                {% if rich_summary.display_panel.edid_summary %}
+                  <div style="margin-bottom:6px;">Panel: {{ rich_summary.display_panel.edid_summary }}</div>
+                {% endif %}
+                {% if rich_summary.graphics %}
+                  <div style="color:#64748b;margin-bottom:6px;">GPU(s)</div>
+                  <ul style="margin:0;padding-left:18px;color:#0f172a;">
+                    {% for g in rich_summary.graphics %}
+                      <li>
+                        {{ g.product|default:"—" }}
+                        {% if g.vendor %}<span style="color:#64748b;">({{ g.vendor }})</span>{% endif %}
+                        {% if g.resolution %}<span style="color:#64748b;">— {{ g.resolution }}</span>{% endif %}
+                      </li>
+                    {% endfor %}
+                  </ul>
+                {% else %}
+                  <div style="color:#64748b;">No display adapter detected.</div>
+                {% endif %}
+              </div>
+
+              <!-- Network -->
+              <div style="flex:1 1 100%;min-width:300px;background:#fff;border:1px solid #f1f5f9;border-radius:8px;padding:10px;">
+                <div style="font-weight:800;margin-bottom:6px;">Network</div>
+                {% if rich_summary.network %}
+                  <div style="overflow:auto;">
+                    <table style="width:100%;border-collapse:collapse;">
+                      <tr style="text-align:left;border-bottom:1px solid #f1f5f9;">
+                        <th style="padding:4px 6px;">Interface</th>
+                        <th style="padding:4px 6px;">Adapter</th>
+                        <th style="padding:4px 6px;">MAC</th>
+                        <th style="padding:4px 6px;">Driver</th>
+                      </tr>
+                      {% for n in rich_summary.network %}
+                        <tr style="border-bottom:1px solid #f8fafc;">
+                          <td style="padding:4px 6px;">{{ n.logicalname|default:"—" }}</td>
+                          <td style="padding:4px 6px;">{{ n.product|default:"—" }}</td>
+                          <td style="padding:4px 6px;">{{ n.mac|default:"—" }}</td>
+                          <td style="padding:4px 6px;">{{ n.driver|default:"—" }}</td>
+                        </tr>
+                      {% endfor %}
+                    </table>
+                  </div>
+                {% else %}
+                  <div style="color:#64748b;">No network adapters detected.</div>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        {% endif %}
 
         <div style="margin-top:8px;">
           <div style="font-weight:800;margin-bottom:6px;">Source Status</div>
