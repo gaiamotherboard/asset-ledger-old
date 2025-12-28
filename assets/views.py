@@ -10,9 +10,276 @@ Key features:
 - Audit trail logging (AssetTouch)
 """
 
+import hashlib
 import json
+import os
 import re
 from typing import Any, Dict, List, Optional, Tuple
+
+
+def _walk(obj):
+    if isinstance(obj, dict):
+        yield obj
+        for v in obj.values():
+            if isinstance(v, (dict, list)):
+                yield from _walk(v)
+    elif isinstance(obj, list):
+        for item in obj:
+            yield from _walk(item)
+
+
+def _human_bytes(n):
+    if n is None:
+        return "—"
+    try:
+        n = float(n)
+    except Exception:
+        return "—"
+    units = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"]
+    i = 0
+    while n >= 1024 and i < len(units) - 1:
+        n /= 1024
+        i += 1
+    if i == 0:
+        return f"{int(n)} {units[i]}"
+    return f"{n:.1f} {units[i]}"
+
+
+def _human_hz(hz):
+    if not hz:
+        return "—"
+    try:
+        hz = float(hz)
+    except Exception:
+        return "—"
+    return f"{hz / 1e9:.2f} GHz"
+
+
+def _upower_get(text, key):
+    m = re.search(rf"^\s*{re.escape(key)}:\s*(.+)$", text or "", re.MULTILINE)
+    return m.group(1).strip() if m else None
+
+
+def build_hw_context(bundle):
+    bundle = bundle or {}
+    sources = bundle.get("sources", {}) or {}
+    status = (bundle.get("meta", {}) or {}).get("status", {}) or {}
+
+    # ----- lshw extraction -----
+    lshw = sources.get("lshw") or {}
+    cpu_node = next(
+        (
+            n
+            for n in _walk(lshw)
+            if isinstance(n, dict) and n.get("class") == "processor"
+        ),
+        None,
+    )
+    ram_node = next(
+        (
+            n
+            for n in _walk(lshw)
+            if isinstance(n, dict)
+            and n.get("class") == "memory"
+            and (n.get("description") or "").lower() == "system memory"
+        ),
+        None,
+    )
+    gpu_node = next(
+        (n for n in _walk(lshw) if isinstance(n, dict) and n.get("class") == "display"),
+        None,
+    )
+
+    net_nodes = [
+        n for n in _walk(lshw) if isinstance(n, dict) and n.get("class") == "network"
+    ]
+    wifi_node = next(
+        (
+            n
+            for n in net_nodes
+            if "wireless" in (n.get("product") or "").lower()
+            or (n.get("logicalname") or "").startswith(("wl", "wlan"))
+        ),
+        None,
+    )
+    eth_node = next((n for n in net_nodes if n is not wifi_node), None)
+
+    tb_nodes = [
+        n
+        for n in _walk(lshw)
+        if isinstance(n, dict)
+        and "thunderbolt"
+        in ((n.get("product") or "") + " " + (n.get("description") or "")).lower()
+    ]
+    tb_node = next(
+        (n for n in tb_nodes if "NHI" in (n.get("product") or "")), None
+    ) or (tb_nodes[0] if tb_nodes else None)
+
+    # ----- edid extraction -----
+    edid = sources.get("edid") or ""
+    disp_mfg = None
+    disp_panel = None
+    disp_native = None
+    m = re.search(r"Manufacturer:\s*([A-Za-z0-9]+)", edid)
+    if m:
+        disp_mfg = m.group(1).strip()
+    m = re.search(r"Alphanumeric Data String:\s*'([^']+)'", edid)
+    if m:
+        disp_panel = m.group(1).strip()
+    m = re.search(r"DTD 1:\s*([0-9]+x[0-9]+)\s+([0-9.]+)\s+Hz", edid)
+    if m:
+        disp_native = f"{m.group(1).replace('x', '×')} @ {float(m.group(2)):.2f} Hz"
+
+    # ----- upower (battery) -----
+    upower = sources.get("upower") or ""
+    batt_vendor = _upower_get(upower, "vendor")
+    batt_model = _upower_get(upower, "model")
+    batt_full = _upower_get(upower, "energy-full")
+    batt_design = _upower_get(upower, "energy-full-design")
+    batt_cap = _upower_get(upower, "capacity")  # percent string
+
+    # ----- lsblk (drives) -----
+    lsblk = sources.get("lsblk") or {}
+    blockdevices = lsblk.get("blockdevices") if isinstance(lsblk, dict) else None
+    blockdevices = blockdevices or []
+    drives = []
+    for d in blockdevices:
+        if not isinstance(d, dict):
+            continue
+        if d.get("type") != "disk":
+            continue
+        parts = []
+        for c in d.get("children") or []:
+            if not isinstance(c, dict) or c.get("type") != "part":
+                continue
+            parts.append(
+                {
+                    "name": c.get("name"),
+                    "fstype": c.get("fstype"),
+                    "size": _human_bytes(c.get("size")),
+                    "mountpoint": c.get("mountpoint"),
+                    "fsuse": c.get("fsuse%"),
+                }
+            )
+        drives.append(
+            {
+                "name": f"/dev/{d.get('name')}" if d.get("name") else "—",
+                "model": d.get("model") or "—",
+                "serial": d.get("serial") or "—",
+                "size": _human_bytes(d.get("size")),
+                "tran": d.get("tran") or "—",
+                "wwn": d.get("wwn") or "—",
+                "parts": parts,
+            }
+        )
+
+    # ----- lsusb (USB devices) -----
+    lsusb = sources.get("lsusb") or ""
+    usb_devices = []
+    for line in lsusb.splitlines() if isinstance(lsusb, str) else []:
+        if "Linux Foundation" in line:
+            continue
+        if line.strip():
+            usb_devices.append(line.strip())
+
+    # ----- smart (basic error hint) -----
+    smart = sources.get("smart") or ""
+    smart_hint = None
+    if isinstance(smart, str) and "Permission denied" in smart:
+        smart_hint = "Permission denied"
+    elif isinstance(smart, str) and smart.strip():
+        smart_hint = "OK"
+
+    # ----- scan health -----
+    health_rows = []
+    for tool in ["lshw", "lsblk", "lspci", "lsusb", "upower", "edid", "smart"]:
+        st = status.get(tool) or {}
+        rc = st.get("rc")
+        stderr = st.get("stderr")
+        stderr_one = None
+        if isinstance(stderr, str) and stderr.strip():
+            stderr_one = stderr.strip().splitlines()[0][:140]
+        health_rows.append(
+            {
+                "tool": tool,
+                "rc": rc,
+                "stderr": stderr_one,
+            }
+        )
+
+    hw = {
+        "intake": bundle.get("intake") or {},
+        "cpu": {
+            "model": (cpu_node.get("product") if cpu_node else None) or "—",
+            "max": _human_hz(cpu_node.get("size") if cpu_node else None),
+            "microcode": (cpu_node.get("configuration") or {}).get("microcode")
+            if cpu_node
+            else None,
+        },
+        "ram": {
+            "total": _human_bytes(ram_node.get("size") if ram_node else None),
+        },
+        "gpu": {
+            "model": (gpu_node.get("product") if gpu_node else None) or "—",
+            "driver": (
+                (gpu_node.get("configuration") or {}).get("driver")
+                if gpu_node
+                else None
+            )
+            or "—",
+        },
+        "display": {
+            "panel": "—"
+            if not (disp_mfg or disp_panel)
+            else f"{disp_mfg or '—'} {disp_panel or '—'}",
+            "native": disp_native or "—",
+        },
+        "battery": {
+            "model": "—"
+            if not (batt_vendor or batt_model)
+            else f"{batt_vendor or '—'} {batt_model or '—'}",
+            "health": "—"
+            if not (batt_full or batt_design or batt_cap)
+            else f"{batt_full or '—'} / {batt_design or '—'} ({(batt_cap or '—').strip()})",
+        },
+        "wifi": {
+            "model": (wifi_node.get("product") if wifi_node else None) or "—",
+            "driver": (
+                (wifi_node.get("configuration") or {}).get("driver")
+                if wifi_node
+                else None
+            )
+            or "—",
+        },
+        "ethernet": {
+            "model": (eth_node.get("product") if eth_node else None) or "—",
+            "driver": (
+                (eth_node.get("configuration") or {}).get("driver")
+                if eth_node
+                else None
+            )
+            or "—",
+            "ifname": (eth_node.get("logicalname") if eth_node else None) or "—",
+            "mac": (eth_node.get("serial") if eth_node else None) or "—",
+        },
+        "thunderbolt": {
+            "model": (tb_node.get("product") if tb_node else None) or "—",
+            "driver": (
+                (tb_node.get("configuration") or {}).get("driver") if tb_node else None
+            )
+            or "—",
+        },
+        "drives": drives,
+        "usb_devices": usb_devices,
+        "smart_hint": smart_hint or "—",
+        "scan": {
+            "generated_at": bundle.get("generated_at") or "—",
+            "scanner": f"{(bundle.get('scanner') or {}).get('hostname', '—')} / {(bundle.get('scanner') or {}).get('user', '—')}",
+            "health_rows": health_rows,
+        },
+    }
+    return hw
+
 
 from django.conf import settings
 from django.contrib import messages
@@ -21,9 +288,22 @@ from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_http_methods
 
-from .forms import AssetIntakeForm, DriveStatusForm, HardwareScanUploadForm
+from .forms import (
+    AssetIntakeForm,
+    DriveRemovalImportForm,
+    DriveStatusForm,
+    HardwareScanUploadForm,
+)
 from .lshw_parser import extract_serial, format_bytes, parse_disks, parse_lshw_json
-from .models import Asset, AssetTouch, Drive, HardwareScan
+from .models import (
+    Asset,
+    AssetTouch,
+    Drive,
+    DriveRemovalBatch,
+    DriveRemovalLink,
+    HardwareScan,
+)
+from .utils import norm_serial, resolve_removed_drives_for_asset
 
 
 def _safe_get(d: Any, *path: str, default=None):
@@ -559,6 +839,8 @@ def asset_detail(request, asset_tag):
     # New: richer summary generated from bundle sources (lshw+lsblk+smart+upower+edid)
     rich_summary = None
 
+    hw = None
+
     if latest_scan:
         # Prefer stored summary for legacy hw_summary display
         if latest_scan.summary:
@@ -568,6 +850,12 @@ def asset_detail(request, asset_tag):
         # fall back to treating raw_json as lshw.
         if latest_scan.raw_json:
             bundle = latest_scan.raw_json
+
+            # New: hw context for the Tailwind/daisyUI asset detail UI
+            try:
+                hw = build_hw_context(bundle if isinstance(bundle, dict) else {})
+            except Exception:
+                hw = build_hw_context({})
 
             # If this is a scan bundle, parse lshw from sources; otherwise treat raw_json as lshw
             lshw_json = _safe_get(bundle, "sources", "lshw", default=None)
@@ -610,6 +898,9 @@ def asset_detail(request, asset_tag):
                     # Do not break the page if parsing has unexpected edge cases
                     rich_summary = None
 
+    if hw is None:
+        hw = build_hw_context({})
+
     # Get drives
     drives = asset.drives.all()
 
@@ -643,6 +934,8 @@ def asset_detail(request, asset_tag):
         "hw_summary": hw_summary,
         # Rich bundle-derived summary for modern scan bundles
         "rich_summary": rich_summary,
+        # New Tailwind/daisyUI hardware context (from latest scan bundle)
+        "hw": hw,
         # New hardware fields exposed to the template
         "system_info": system_info,
         "graphics": graphics,
@@ -703,6 +996,139 @@ def asset_intake_update(request, asset_tag):
     return redirect("asset_detail", asset_tag=asset_tag)
 
 
+def _canonical_bundle_and_hash(bundle: dict) -> Tuple[str, str]:
+    """
+    Return (canonical_json, sha256_hex) for a scan bundle dict.
+    """
+    try:
+        canonical = json.dumps(
+            bundle, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        )
+    except (TypeError, ValueError):
+        canonical = json.dumps(
+            bundle,
+            default=str,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        )
+    return canonical, hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _ingest_scan_bundle_for_asset(
+    *,
+    asset: Asset,
+    bundle: dict,
+    user,
+    user_notes: str,
+    allow_asset_id_mismatch: bool = False,
+) -> Tuple[bool, str]:
+    """
+    Ingest a scan bundle for an existing Asset.
+
+    Returns (created_scan, message).
+    - Deduplicates by (asset, bundle_hash)
+    - Updates asset.computer_serial if blank
+    - Upserts Drive rows from parsed disks
+    - Logs AssetTouch scan_upload
+    """
+    from django.utils.dateparse import parse_datetime
+
+    intake = bundle.get("intake", {}) or {}
+    bundle_asset_id = str(intake.get("asset_id", "") or "")
+
+    if (
+        (not allow_asset_id_mismatch)
+        and bundle_asset_id
+        and bundle_asset_id != str(asset.asset_tag)
+    ):
+        return (
+            False,
+            f"Bundle asset_id '{bundle_asset_id}' does not match asset '{asset.asset_tag}'.",
+        )
+
+    _canonical, bundle_hash = _canonical_bundle_and_hash(bundle)
+
+    existing = HardwareScan.objects.filter(asset=asset, bundle_hash=bundle_hash).first()
+    if existing:
+        return (False, "Duplicate scan bundle (already exists).")
+
+    gen_at_raw = bundle.get("generated_at")
+    generated_at = None
+    if gen_at_raw:
+        try:
+            generated_at = parse_datetime(gen_at_raw)
+        except Exception:
+            generated_at = None
+
+    tech_name = intake.get("tech_name", "") or ""
+    client_name = intake.get("client_name", "") or ""
+    cosmetic_condition = intake.get("cosmetic_condition", "") or ""
+    intake_note = intake.get("note", "") or ""
+
+    sources = bundle.get("sources", {}) or {}
+    lshw_json = sources.get("lshw")
+
+    parsed = {}
+    if lshw_json:
+        parsed = parse_lshw_json(lshw_json) or {}
+    device_serial = parsed.get("device_serial")
+    hw_summary = parsed.get("hw_summary")
+    disks = parsed.get("disks", []) or []
+
+    # Mirror device serial onto Asset.computer_serial (if blank).
+    norm_device_serial = norm_serial(device_serial)
+    if norm_device_serial:
+        existing_cs = norm_serial(getattr(asset, "computer_serial", None))
+        if not existing_cs:
+            asset.computer_serial = norm_device_serial
+            asset.save(update_fields=["computer_serial"])
+
+    scan = HardwareScan.objects.create(
+        asset=asset,
+        device_serial=device_serial,
+        raw_json=bundle,
+        bundle_hash=bundle_hash,
+        schema=bundle.get("schema", ""),
+        generated_at=generated_at,
+        tech_name=tech_name,
+        client_name=client_name,
+        cosmetic_condition=cosmetic_condition,
+        intake_note=intake_note,
+        summary=hw_summary,
+        scanned_by=user,
+        user_notes=user_notes,
+    )
+
+    for disk in disks:
+        serial = disk.get("serial")
+        if not serial or not serial.strip():
+            continue
+        defaults = {
+            "logicalname": disk.get("logicalname", ""),
+            "capacity_bytes": disk.get("size_bytes"),
+            "model": disk.get("model", ""),
+            "source": "lshw",
+        }
+        Drive.objects.update_or_create(asset=asset, serial=serial, defaults=defaults)
+
+    resolved_count = resolve_removed_drives_for_asset(asset)
+
+    _log_touch(
+        asset,
+        "scan_upload",
+        user,
+        {
+            "scan_id": scan.id,
+            "device_serial": device_serial,
+            "drive_count": len(disks),
+            "resolved_removed_before_scan": resolved_count,
+        },
+    )
+
+    return (True, f"Saved scan bundle. Found {len(disks)} drive(s).")
+
+
 @login_required
 @require_http_methods(["POST"])
 def asset_scan_upload(request, asset_tag):
@@ -719,139 +1145,157 @@ def asset_scan_upload(request, asset_tag):
     - updates/creates Drive records from parsed lshw disks
     - logs the upload via AssetTouch
     """
-    import hashlib
-
     from django.utils.dateparse import parse_datetime
 
     asset = get_object_or_404(Asset, asset_tag=asset_tag)
     form = HardwareScanUploadForm(request.POST, request.FILES)
 
     if form.is_valid():
-        # Parsed bundle (full scan bundle) is provided by the form
         bundle = form.cleaned_data.get("parsed_json")
         user_notes = form.cleaned_data.get("user_notes", "")
 
-        # Enforce the intake.asset_id matches the URL asset_tag to avoid mis-uploads
-        intake = bundle.get("intake", {}) or {}
-        bundle_asset_id = str(intake.get("asset_id", "") or "")
-        if bundle_asset_id != str(asset_tag):
-            messages.error(
-                request,
-                f"Bundle asset_id '{bundle_asset_id}' does not match this asset '{asset_tag}'. Upload rejected.",
-            )
-            return redirect("asset_detail", asset_tag=asset_tag)
-
-        # Compute canonical JSON form and sha256 for deduplication
-        try:
-            canonical = json.dumps(
-                bundle, sort_keys=True, separators=(",", ":"), ensure_ascii=False
-            )
-        except (TypeError, ValueError):
-            # Fallback: use normal dumps if some objects aren't serializable in canonical step
-            canonical = json.dumps(
-                bundle,
-                default=str,
-                sort_keys=True,
-                separators=(",", ":"),
-                ensure_ascii=False,
-            )
-        bundle_hash = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-
-        # Dedupe: if identical bundle already ingested for this asset, short-circuit
-        existing = HardwareScan.objects.filter(
-            asset=asset, bundle_hash=bundle_hash
-        ).first()
-        if existing:
-            messages.success(request, "Duplicate scan bundle (already exists).")
-            return redirect("asset_detail", asset_tag=asset_tag)
-
-        # Parse generated_at if present
-        gen_at_raw = bundle.get("generated_at")
-        generated_at = None
-        if gen_at_raw:
-            try:
-                generated_at = parse_datetime(gen_at_raw)
-            except Exception:
-                generated_at = None
-
-        # Extract intake duplicate fields for easier queries
-        tech_name = intake.get("tech_name", "") or ""
-        client_name = intake.get("client_name", "") or ""
-        cosmetic_condition = intake.get("cosmetic_condition", "") or ""
-        intake_note = intake.get("note", "") or ""
-
-        # Use the lshw source inside the bundle for existing parsing logic
-        sources = bundle.get("sources", {}) or {}
-        lshw_json = sources.get("lshw")  # expected to be a dict (LSHW JSON)
-
-        # Parse hardware information using existing parser (works on LSHW JSON)
-        parsed = {}
-        if lshw_json:
-            parsed = parse_lshw_json(lshw_json) or {}
-        device_serial = parsed.get("device_serial")
-        hw_summary = parsed.get("hw_summary")
-        disks = parsed.get("disks", []) or []
-
-        # Create HardwareScan record (store full bundle in raw_json and metadata)
-        scan = HardwareScan.objects.create(
+        created, msg = _ingest_scan_bundle_for_asset(
             asset=asset,
-            device_serial=device_serial,
-            raw_json=bundle,
-            bundle_hash=bundle_hash,
-            schema=bundle.get("schema", ""),
-            generated_at=generated_at,
-            tech_name=tech_name,
-            client_name=client_name,
-            cosmetic_condition=cosmetic_condition,
-            intake_note=intake_note,
-            summary=hw_summary,
-            scanned_by=request.user,
+            bundle=bundle,
+            user=request.user,
             user_notes=user_notes,
+            allow_asset_id_mismatch=False,
         )
-
-        # Create/update drive records based on disks extracted from lshw parsing
-        created_or_updated = 0
-        for disk in disks:
-            serial = disk.get("serial")
-            # Skip drives with missing/empty serials to prevent duplicates
-            if not serial or not serial.strip():
-                continue
-
-            defaults = {
-                "logicalname": disk.get("logicalname", ""),
-                "capacity_bytes": disk.get("size_bytes"),
-                "model": disk.get("model", ""),
-                "source": "lshw",
-            }
-
-            Drive.objects.update_or_create(
-                asset=asset,
-                serial=serial,
-                defaults=defaults,
-            )
-            created_or_updated += 1
-
-        # Log the upload (audit trail)
-        _log_touch(
-            asset,
-            "scan_upload",
-            request.user,
-            {
-                "scan_id": scan.id,
-                "device_serial": device_serial,
-                "drive_count": len(disks),
-            },
-        )
-
-        messages.success(
-            request,
-            f"Saved scan bundle. Found {len(disks)} drive(s).",
-        )
+        if created:
+            messages.success(request, msg)
+        else:
+            # duplicate or mismatch message
+            if "does not match" in msg:
+                messages.error(request, msg + " Upload rejected.")
+            else:
+                messages.success(request, msg)
     else:
         for error in form.errors.values():
             messages.error(request, error)
 
     return redirect("asset_detail", asset_tag=asset_tag)
+
+
+@login_required
+@require_http_methods(["POST"])
+def asset_scan_bulk_upload(request):
+    """
+    Bulk upload scan bundles.
+
+    Behavior:
+    - Accept multiple JSON files in one request (input name: files)
+    - Asset tag is derived from filename: ASSETTAG.json
+    - If asset does not exist: create it + create a HardwareScan
+    - If asset exists: ingest scan bundle for that asset (dedupe by bundle_hash)
+    - If the bundle is a duplicate for that asset: skipped
+    - If the bundle asset_id mismatches filename asset tag: error for that file
+    """
+    files = request.FILES.getlist("files")
+    if not files:
+        messages.error(request, "No files selected.")
+        return redirect(request.META.get("HTTP_REFERER", "home"))
+
+    results = {
+        "total": len(files),
+        "created_assets": 0,
+        "updated_assets": 0,
+        "created_scans": 0,
+        "duplicates": 0,
+        "failed": 0,
+        "errors": [],
+    }
+
+    for f in files:
+        name = os.path.basename(getattr(f, "name", "") or "").strip()
+        m = re.match(r"^([A-Za-z0-9_-]+)\.json$", name)
+        if not m:
+            results["failed"] += 1
+            results["errors"].append(
+                {"file": name or "(unnamed)", "error": "Filename must be ASSETTAG.json"}
+            )
+            continue
+
+        asset_tag = m.group(1)
+
+        try:
+            raw = f.read()
+            bundle = json.loads(raw.decode("utf-8"))
+            if not isinstance(bundle, dict):
+                raise ValueError("Top-level JSON must be an object")
+        except Exception as e:
+            results["failed"] += 1
+            results["errors"].append(
+                {"file": name, "asset": asset_tag, "error": str(e)}
+            )
+            continue
+
+        # Ensure the bundle asset_id matches the filename-derived asset tag
+        intake = bundle.get("intake", {}) or {}
+        bundle_asset_id = str(intake.get("asset_id", "") or "")
+        if bundle_asset_id != str(asset_tag):
+            results["failed"] += 1
+            results["errors"].append(
+                {
+                    "file": name,
+                    "asset": asset_tag,
+                    "error": f"Bundle asset_id '{bundle_asset_id}' does not match filename asset '{asset_tag}'",
+                }
+            )
+            continue
+
+        asset, created_asset = Asset.objects.get_or_create(
+            asset_tag=asset_tag,
+            defaults={"created_by": request.user},
+        )
+        if created_asset:
+            results["created_assets"] += 1
+        else:
+            results["updated_assets"] += 1
+
+        created_scan, msg = _ingest_scan_bundle_for_asset(
+            asset=asset,
+            bundle=bundle,
+            user=request.user,
+            user_notes=f"Bulk upload from {name}",
+            allow_asset_id_mismatch=False,
+        )
+
+        if created_scan:
+            results["created_scans"] += 1
+        else:
+            if "Duplicate scan bundle" in msg:
+                results["duplicates"] += 1
+            else:
+                results["failed"] += 1
+                results["errors"].append(
+                    {"file": name, "asset": asset_tag, "error": msg}
+                )
+
+    # User-friendly summary + short error preview
+    if (
+        results["created_scans"]
+        or results["duplicates"]
+        or results["created_assets"]
+        or results["updated_assets"]
+    ):
+        messages.success(
+            request,
+            f"Bulk upload: {results['total']} file(s) processed · "
+            f"{results['created_assets']} new asset(s), {results['updated_assets']} existing asset(s) · "
+            f"{results['created_scans']} scan(s) saved · {results['duplicates']} duplicate(s) skipped · "
+            f"{results['failed']} failed.",
+        )
+    if results["errors"]:
+        preview = results["errors"][:5]
+        preview_text = " | ".join(
+            [f"{e.get('file')}: {e.get('error')}" for e in preview]
+        )
+        messages.warning(
+            request,
+            f"Bulk upload errors (first {len(preview)}): {preview_text}",
+        )
+
+    return redirect(request.META.get("HTTP_REFERER", "home"))
 
 
 @login_required
@@ -894,6 +1338,135 @@ def drive_status_update(request, asset_tag, drive_id):
 
 
 @login_required
+@require_http_methods(["GET", "POST"])
+def drive_removals_import(request):
+    """
+    Upload/paste a 2-column list (computer_serial, drive_serial) representing
+    drives removed BEFORE lshw scan.
+
+    Creates a DriveRemovalBatch for audit, upserts DriveRemovalLink for idempotency,
+    and resolves to real Drive rows for any Assets that already exist.
+    """
+    stats = None
+    errors_preview = []
+
+    if request.method == "POST":
+        form = DriveRemovalImportForm(request.POST, request.FILES)
+        if form.is_valid():
+            uploaded_file = form.cleaned_data.get("file")
+            manual_text = form.cleaned_data.get("manual_text", "") or ""
+            note = form.cleaned_data.get("note", "") or ""
+
+            batch = DriveRemovalBatch.objects.create(
+                created_by=request.user,
+                original_file=uploaded_file if uploaded_file else None,
+                original_filename=(getattr(uploaded_file, "name", "") or "")
+                if uploaded_file
+                else "",
+                manual_text=manual_text,
+                note=note,
+            )
+
+            total_rows = 0
+            imported_rows = 0
+            duplicate_rows = 0
+            error_rows = 0
+
+            # Track distinct computer_serials seen in this batch so we can resolve after import.
+            seen_computer_serials = set()
+
+            for cs, ds, raw_line, row_idx in form.iter_pairs():
+                total_rows += 1
+
+                if not cs or not ds:
+                    error_rows += 1
+                    if len(errors_preview) < 10:
+                        errors_preview.append(
+                            {
+                                "row": row_idx,
+                                "line": raw_line,
+                                "error": "Missing computer_serial or drive_serial",
+                            }
+                        )
+                    continue
+
+                seen_computer_serials.add(cs)
+
+                link, created = DriveRemovalLink.objects.get_or_create(
+                    computer_serial=cs,
+                    drive_serial=ds,
+                    defaults={
+                        "seen_count": 1,
+                        "last_batch": batch,
+                    },
+                )
+
+                if created:
+                    imported_rows += 1
+                else:
+                    duplicate_rows += 1
+                    link.seen_count = (link.seen_count or 0) + 1
+                    link.last_batch = batch
+                    link.save(
+                        update_fields=["seen_count", "last_batch", "last_seen_at"]
+                    )
+
+            # Persist stats on the batch
+            batch.total_rows = total_rows
+            batch.imported_rows = imported_rows
+            batch.duplicate_rows = duplicate_rows
+            batch.error_rows = error_rows
+            batch.save(
+                update_fields=[
+                    "total_rows",
+                    "imported_rows",
+                    "duplicate_rows",
+                    "error_rows",
+                ]
+            )
+
+            # Resolve for any assets already present.
+            resolved_assets = 0
+            resolved_drives = 0
+            for cs in sorted(seen_computer_serials):
+                asset = Asset.objects.filter(computer_serial=cs).first()
+                if not asset:
+                    continue
+                resolved_assets += 1
+                resolved_drives += resolve_removed_drives_for_asset(asset)
+
+            stats = {
+                "batch_id": batch.id,
+                "total_rows": total_rows,
+                "imported_rows": imported_rows,
+                "duplicate_rows": duplicate_rows,
+                "error_rows": error_rows,
+                "resolved_assets": resolved_assets,
+                "resolved_drives": resolved_drives,
+            }
+
+            messages.success(
+                request,
+                f"Imported drive removals batch #{batch.id}: "
+                f"{imported_rows} new, {duplicate_rows} duplicate, {error_rows} error.",
+            )
+        else:
+            for error in form.errors.values():
+                messages.error(request, error)
+    else:
+        form = DriveRemovalImportForm()
+
+    return render(
+        request,
+        "assets/drive_removals_import.html",
+        {
+            "form": form,
+            "stats": stats,
+            "errors_preview": errors_preview,
+        },
+    )
+
+
 def drive_search_by_serial(request):
     """
     Search for drives by serial number.

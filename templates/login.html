@@ -1,161 +1,113 @@
-<!doctype html>
-<html lang="en">
-    <head>
-        <meta charset="UTF-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Login - Asset Control Panel</title>
-        <script src="https://cdn.tailwindcss.com"></script>
-        <!-- daisyUI (prebuilt CSS for quick integration) -->
-        <link
-            href="https://cdn.jsdelivr.net/npm/daisyui@2.51.5/dist/full.css"
-            rel="stylesheet"
-        />
-        <!-- Font Awesome (icons) -->
-        <link
-            href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css"
-            rel="stylesheet"
-        />
-    </head>
-    <body class="min-h-screen bg-base-200 flex items-center justify-center">
-        <div class="max-w-md w-full mx-4">
-            <!-- Login Card (daisyUI) -->
-            <div class="card bg-base-100 shadow-xl rounded-2xl">
-                <div class="card-body p-8">
-                    <!-- Header -->
-                    <div class="text-center mb-4">
-                        <h1 class="text-3xl font-bold text-base-content mb-1">
-                            Asset Control Panel
-                        </h1>
-                        <p class="text-base-content/70">Sign in to continue</p>
-                    </div>
+{% extends "base.html" %}
 
-                    <!-- Theme selector (small, unobtrusive) -->
-                    <div class="flex justify-end mb-4">
-                        <select
-                            id="themeSelect"
-                            class="select select-sm select-bordered w-36"
-                        >
-                            <option value="business">Business</option>
-                            <option value="light">Light</option>
-                            <option value="dark">Dark</option>
-                            <option value="cupcake">Cupcake</option>
-                        </select>
-                    </div>
+{% block title %}Login - Asset Control Panel{% endblock %}
 
-                    <!-- Login Form -->
-                    <form method="post" class="space-y-4">
-                        {% csrf_token %} {% if form.errors %}
-                        <div class="alert alert-error shadow-lg">
-                            <div>
-                                <i class="fas fa-exclamation-triangle"></i>
-                                <span class="ml-2"
-                                    >Invalid credentials — please check your
-                                    username and password.</span
-                                >
-                            </div>
-                        </div>
-                        {% endif %}
+{% block content %}
+<div class="min-h-[70vh] flex items-center justify-center">
+  <div class="max-w-md w-full mx-4">
 
-                        <!-- Username -->
-                        <div>
-                            <label for="id_username" class="label">
-                                <span class="label-text">Username</span>
-                            </label>
-                            <input
-                                type="text"
-                                name="username"
-                                id="id_username"
-                                required
-                                autofocus
-                                placeholder="Enter your username"
-                                class="input input-bordered w-full"
-                            />
-                        </div>
+    <!-- Login Card (daisyUI) -->
+    <div class="card bg-base-100 shadow-xl rounded-2xl">
+      <div class="card-body p-8">
 
-                        <!-- Password -->
-                        <div>
-                            <label for="id_password" class="label">
-                                <span class="label-text">Password</span>
-                            </label>
-                            <input
-                                type="password"
-                                name="password"
-                                id="id_password"
-                                required
-                                placeholder="Enter your password"
-                                class="input input-bordered w-full"
-                            />
-                        </div>
-
-                        <!-- Submit Button -->
-                        <button type="submit" class="btn btn-primary w-full">
-                            Sign In
-                        </button>
-
-                        <!-- Hidden redirect field -->
-                        <input type="hidden" name="next" value="{{ next }}" />
-                    </form>
-
-                    <!-- Footer Note -->
-                    <div class="mt-4 text-center text-sm text-base-content/60">
-                        <p>Default credentials: admin / admin123</p>
-                        <p class="mt-1">(Change these in production!)</p>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Version Info -->
-            <div class="text-center mt-4 text-base-content/70 text-sm">
-                <p>Asset Tracking System v2.0 (Django)</p>
-            </div>
+        <!-- Header -->
+        <div class="text-center mb-4">
+          <h1 class="text-3xl font-bold text-base-content mb-1">
+            Asset Control Panel
+          </h1>
+          <p class="text-base-content/70">Sign in to continue</p>
         </div>
 
-        <script>
-            // DaisyUI theme persistence and selector hookup
-            (function () {
-                const defaultTheme = "business";
-                function applyTheme(t) {
-                    if (!t) return;
-                    document.documentElement.setAttribute("data-theme", t);
-                    try {
-                        localStorage.setItem("dm_theme", t);
-                    } catch (e) {}
-                }
-                function savedTheme() {
-                    try {
-                        return localStorage.getItem("dm_theme");
-                    } catch (e) {
-                        return null;
-                    }
-                }
-                document.addEventListener("DOMContentLoaded", function () {
-                    const saved = savedTheme();
-                    const theme = saved || defaultTheme;
-                    applyTheme(theme);
-                    const sel = document.getElementById("themeSelect");
-                    if (sel) {
-                        sel.value = theme;
-                        sel.addEventListener("change", function (e) {
-                            applyTheme(e.target.value);
-                        });
-                    }
+        <!-- Login Form -->
+        <form method="post" class="space-y-4">
+          {% csrf_token %}
 
-                    // Allow Enter to submit from password field
-                    const pwd = document.getElementById("id_password");
-                    const user = document.getElementById("id_username");
-                    const form = pwd ? pwd.closest("form") : null;
-                    if (form && user && pwd) {
-                        [user, pwd].forEach(function (el) {
-                            el.addEventListener("keypress", function (e) {
-                                if (e.key === "Enter") {
-                                    e.preventDefault();
-                                    form.submit();
-                                }
-                            });
-                        });
-                    }
-                });
-            })();
-        </script>
-    </body>
-</html>
+          {% if form.errors %}
+          <div class="alert alert-error shadow-lg">
+            <div>
+              <</div>i class="fas fa-exclamation-triangle"></i>
+              <span class="ml-2">
+                Invalid credentials — please check your username and password.
+              </span>
+            </div>
+          </div>
+          {% endif %}
+
+          <!-- Username -->
+          <div></div>
+            <label for="id_username" class="label">
+              <span class="label-text">Username</span>
+            </label>
+            <input
+              type="text"
+              name="username"
+              id="id_username"
+              required
+              autofocus
+              placeholder="Enter your username"
+              class="input input-bordered w-full"
+            />
+          </div>
+
+          <!-- Password -->
+          <div>
+            <label for</div>="id_password" class="label">
+              <span class="label-text">Password</span>
+            </label>
+            <input
+              type="password"
+              name="password"
+              id="id_password"
+              required
+              placeholder="Enter your password"
+              class="input input-bordered w-full"
+            />
+          </div>
+
+          <!-- Submit Button -->
+          <button type="submit" class="btn btn-primary w-full">
+            Sign In
+          </button>
+
+          <!-- Hidden redirect field -->
+          <input type="hidden" name="next" value="{{ next }}" />
+        </form>
+
+        <!-- Footer Note -->
+        <div class="mt-4 text-center text-sm text-base-content/60">
+          <p>Default credentials: admin / admin123</p>
+          <</p>p class="mt-1">(Change these in production!)</p>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Version Info -->
+    <div class="text-center mt-4 text-base-content/70 text-sm">
+      <p>Asset Tracking System v2</p>.0 (Django)</p>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script></script>
+  // Keep "Enter submits form" behavior (safe guard if elements missing)
+  (function () {
+    const user = document.getElementById("id_username");
+    const pwd = document.getElementById("id_password");
+    const form = pwd ? pwd.closest("form") : (user ? user.closest("form") : null);
+    if (!form) return;
+
+    [user, pwd].forEach(function (el) {
+      if (!el) return;
+      el.addEventListener("keypress", function (e) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          form.submit();
+        }
+      });
+    });
+  })();
+</script>
+{% endblock %}

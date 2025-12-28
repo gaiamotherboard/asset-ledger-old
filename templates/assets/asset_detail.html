@@ -1,322 +1,251 @@
-<!--
-Minimal, correct Django asset detail template.
-Shows: asset header, upload scan bundle form, latest scan metadata/status, richer hardware summary, drives, and activity.
-This file replaces the previous template and is intentionally small and stable.
--->
+{% extends "base.html" %}
 
-<div style="font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-            background:#f8fafc; color:#0f172a; min-height:100vh; padding:20px; box-sizing:border-box;">
-  <div style="max-width:980px; margin:0 auto;">
+{% block title %}Asset {{ asset.asset_tag|default:asset.id }} - Asset Control Panel{% endblock %}
 
-    <!-- Top bar -->
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px;">
-      <a href="{% url 'home' %}" style="color:#2563eb;text-decoration:none;font-weight:700;">← Home</a>
-      <div style="color:#64748b;font-size:0.95rem;">{{ request.user.username }}</div>
-    </div>
+{% block content %}
+<div class="max-w-6xl mx-auto p-4 space-y-4">
 
-    <!-- Asset header -->
-    <div style="background:#ffffff;border:1px solid #e6edf3;border-radius:10px;padding:14px 16px;margin-bottom:14px;">
-      <div style="font-size:1.4rem;font-weight:800;">Asset <span style="color:#1d4ed8;">{{ asset.asset_tag }}</span></div>
-      <div style="margin-top:6px;color:#64748b;font-size:0.95rem;">Created {{ asset.created_at|date:"Y-m-d H:i" }} by {{ asset.created_by.username }}</div>
-    </div>
-
-    <!-- Flash messages -->
-    {% if messages %}
-      <div style="margin-bottom:14px;">
-        {% for message in messages %}
-          <div style="background:#fff;border:1px solid #e6edf3;border-radius:10px;padding:10px 12px;margin-bottom:8px;color:#475569;">
-            {{ message }}
-          </div>
-        {% endfor %}
+  <!-- Header -->
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+    <div>
+      <h</div>1 class="text-2xl font-bold">
+        Asset {{ hw.intake.asset_id|default:asset.asset_tag|default:asset.id }}
+      </h1>
+      <div class="text-sm opacity-70">
+        {{ hw.scan.generated_at|default:"—" }} · {{ hw.scan.scanner|default:"—" }}
       </div>
-    {% endif %}
+    </div>
 
-    <!-- Upload scan bundle -->
-    <div style="background:#fff;border:1px solid #e6edf3;border-radius:10px;padding:12px;margin-bottom:12px;">
-      <div style="font-weight:800;margin-bottom:8px;">Upload Scan Bundle JSON</div>
-      <form method="post" action="{% url 'asset_scan_upload' asset.asset_tag %}" enctype="multipart/form-data">
+    <div class="flex gap-2">
+      <a class="btn btn-sm btn-outline" href="/admin/assets/asset/{{ asset.id }}/change/">Edit Intake</a>
+      <a class="btn btn-sm btn-primary" href="#upload">Upload</a>
+      <a class="btn btn-sm btn-ghost" href="#bulk-upload">Bulk Upload</a>
+    </div>
+  </div>
+
+  {% if not hw.scan.generated_at or hw.scan.generated_at == "—" %}
+  <div class="alert alert-info shadow">
+    <span>No scan data yet for this asset.</span>
+  </div>
+  {% endif %}
+
+  <!-- Intake -->
+  <div class="card bg-base-100 shadow">
+    <div class="card-body p-4">
+      <h2 class="card-title text-lg">Intake</h2>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
+        <div></div>
+          <div class="text-xs opacity-60">Asset ID</div>
+          <div class="font-semibold">{{ hw.intake.asset_id|default:"—" }}</div>
+        </div>
+        <div>
+          <div class="</div>text-xs opacity-60">Tech</div>
+          <div class="font-semibold">{{ hw.intake.tech_name|default:"—" }}</div>
+        </div>
+        <div></div>
+          <div class="text-xs opacity-60">Client</div>
+          <div class="font-semibold">{{ hw.intake.client_name|default:"—" }}</div>
+        </div>
+        <div></div>
+          <div class="text-xs opacity-60">Cosmetic</div>
+          <div class="font-semibold">{{ hw.intake.cosmetic_condition|default:"—" }}</div>
+        </div>
+      </div>
+
+      {% if hw.intake.note %}
+      <div class="mt-3">
+        <div class="text-xs opacity-60">Note</div>
+        <div class="text-sm whitespace-pre-wrap">{{ hw.intake.note }}</div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Bulk Upload -->
+  <div id="bulk-upload" class="card bg-base-100 shadow">
+    <div class="card-body p-4">
+      <h2 class="card-title text-lg">Bulk Upload Scan Bundles</h2>
+      <p class="text-sm opacity-70">
+        Upload multiple JSON files at once. Each filename must be
+        <span class="font-mono">ASSETTAG.json</span> and the JSON must contain
+        <span class="font-mono">intake.asset_id</span> matching the filename.
+      </p>
+
+      <form method="post" action="{% url 'asset_scan_bulk_upload' %}" enctype="multipart/form-data" class="mt-3 space-y-3">
         {% csrf_token %}
-        <div style="margin-bottom:10px;">
-          <label style="font-weight:700;display:block;margin-bottom:6px;">Scan bundle JSON file (motherboard.scan_bundle.v1)</label>
-          {{ upload_form.file }}
+        <input
+          type="file"
+          name="files"
+          multiple
+          accept=".json,application/json"
+          class="file-input file-input-bordered w-full"
+        />
+        <div class="flex flex-wrap gap-2">
+          <button type="submit" class="btn btn-primary">Upload Files</button>
+          <a class="btn btn-ghost" href="#upload">Single Upload</a>
         </div>
-        <div style="margin-bottom:10px;">
-          <label style="font-weight:700;display:block;margin-bottom:6px;">Notes (optional)</label>
-          {{ upload_form.user_notes }}
-        </div>
-        <button type="submit" style="background:#16a34a;color:#fff;border:none;padding:10px 12px;border-radius:8px;font-weight:800;cursor:pointer;">Upload</button>
       </form>
     </div>
+  </div>
 
-    <!-- Latest scan bundle -->
-    {% if latest_scan %}
-      <div style="background:#fff;border:1px solid #e6edf3;border-radius:10px;padding:12px;margin-bottom:12px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-          <div style="font-weight:800;">Latest Scan Bundle</div>
-          <div style="color:#64748b;">Saved {{ latest_scan.scanned_at|date:"Y-m-d H:i" }}</div>
+  <!-- Quick Specs (4×2 responsive grid) -->
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+
+    <div class="card bg-base-100 shadow">
+      <div class="card-body p-4">
+        <div class="text-xs opacity-60">CPU</div>
+        <div class="font-semibold text-sm leading-snug">{{ hw.cpu.model|default:"—" }}</div>
+        <div class="mt-2 flex items-center justify-between">
+          <div class="text-xs opacity-60">Max</div>
+          <span class="badge badge-ghost">{{ hw.cpu.max|default:"—" }}</span>
         </div>
-
-        <div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:10px;">
-          <div style="flex:1 1 220px;min-width:220px;">
-            <div style="font-weight:700;color:#64748b;">Generated At</div>
-            <div style="margin-top:6px;">{% if latest_scan.generated_at %}{{ latest_scan.generated_at|date:"Y-m-d H:i" }}{% else %}{{ latest_scan.raw_json.generated_at|default:"Unknown" }}{% endif %}</div>
-          </div>
-
-          <div style="flex:1 1 220px;min-width:220px;">
-            <div style="font-weight:700;color:#64748b;">Scanner</div>
-            <div style="margin-top:6px;">{% if latest_scan.raw_json.scanner %}{{ latest_scan.raw_json.scanner.hostname|default:"" }} / {{ latest_scan.raw_json.scanner.user|default:"" }}{% else %}N/A{% endif %}</div>
-          </div>
-
-          <div style="flex:1 1 220px;min-width:220px;">
-            <div style="font-weight:700;color:#64748b;">Intake</div>
-            <div style="margin-top:6px;">Tech: {% if latest_scan.tech_name %}{{ latest_scan.tech_name }}{% else %}{{ latest_scan.raw_json.intake.tech_name|default:"" }}{% endif %}</div>
-            <div style="color:#64748b;margin-top:4px;">Client: {% if latest_scan.client_name %}{{ latest_scan.client_name }}{% else %}{{ latest_scan.raw_json.intake.client_name|default:"" }}{% endif %}</div>
-            <div style="color:#64748b;margin-top:4px;">Condition: {% if latest_scan.cosmetic_condition %}{{ latest_scan.cosmetic_condition }}{% else %}{{ latest_scan.raw_json.intake.cosmetic_condition|default:"" }}{% endif %}</div>
-          </div>
-        </div>
-
-        {% if rich_summary %}
-          <!-- Rich hardware summary -->
-          <div style="margin-top:8px;">
-            <div style="font-weight:800;margin-bottom:6px;">Hardware Summary</div>
-
-            {% if rich_summary.spec_line %}
-              <div style="margin-bottom:10px;background:#f8fafc;border:1px solid #e6edf3;border-radius:8px;padding:10px;color:#0f172a;">
-                {{ rich_summary.spec_line }}
-              </div>
-            {% endif %}
-
-            <div style="display:flex;flex-wrap:wrap;gap:12px;">
-              <!-- System -->
-              <div style="flex:1 1 300px;min-width:300px;background:#fff;border:1px solid #f1f5f9;border-radius:8px;padding:10px;">
-                <div style="font-weight:800;margin-bottom:6px;">System</div>
-                <div style="color:#64748b;">Vendor</div>
-                <div style="margin-bottom:6px;">{{ rich_summary.system.vendor|default:"—" }}</div>
-                <div style="color:#64748b;">Product</div>
-                <div style="margin-bottom:6px;">{{ rich_summary.system.product|default:"—" }}</div>
-                <div style="color:#64748b;">Serial</div>
-                <div>{{ rich_summary.system.serial|default:"—" }}</div>
-              </div>
-
-              <!-- CPU -->
-              <div style="flex:1 1 300px;min-width:300px;background:#fff;border:1px solid #f1f5f9;border-radius:8px;padding:10px;">
-                <div style="font-weight:800;margin-bottom:6px;">CPU</div>
-                <div style="margin-bottom:6px;">{{ rich_summary.cpu.model|default:"—" }}</div>
-                <div style="color:#64748b;margin-bottom:6px;">
-                  {% if rich_summary.cpu.cores %}{{ rich_summary.cpu.cores }}C{% endif %}
-                  {% if rich_summary.cpu.threads %} / {{ rich_summary.cpu.threads }}T{% endif %}
-                  {% if rich_summary.cpu.max_hz_human %} — {{ rich_summary.cpu.max_hz_human }}{% endif %}
-                </div>
-                <div style="color:#64748b;">Vendor</div>
-                <div>{{ rich_summary.cpu.vendor|default:"—" }}</div>
-              </div>
-
-              <!-- Memory -->
-              <div style="flex:1 1 300px;min-width:300px;background:#fff;border:1px solid #f1f5f9;border-radius:8px;padding:10px;">
-                <div style="font-weight:800;margin-bottom:6px;">Memory</div>
-                <div style="margin-bottom:6px;">Total: {{ rich_summary.memory.total_human|default:"—" }}</div>
-                {% if rich_summary.memory.slots %}
-                  <div style="color:#64748b;margin-bottom:6px;">Slots</div>
-                  <div style="overflow:auto;">
-                    <table style="width:100%;border-collapse:collapse;">
-                      <tr style="text-align:left;border-bottom:1px solid #f1f5f9;">
-                        <th style="padding:4px 6px;">Slot</th>
-                        <th style="padding:4px 6px;">Size</th>
-                        <th style="padding:4px 6px;">Vendor</th>
-                        <th style="padding:4px 6px;">Part</th>
-                      </tr>
-                      {% for ms in rich_summary.memory.slots %}
-                        <tr style="border-bottom:1px solid #f8fafc;">
-                          <td style="padding:4px 6px;">{{ ms.slot|default:"—" }}</td>
-                          <td style="padding:4px 6px;">{{ ms.size_human|default:"—" }}</td>
-                          <td style="padding:4px 6px;">{{ ms.vendor|default:"—" }}</td>
-                          <td style="padding:4px 6px;">{{ ms.product|default:"—" }}</td>
-                        </tr>
-                      {% endfor %}
-                    </table>
-                  </div>
-                {% else %}
-                  <div style="color:#64748b;">No DIMM details detected.</div>
-                {% endif %}
-              </div>
-
-              <!-- Storage -->
-              <div style="flex:1 1 100%;min-width:300px;background:#fff;border:1px solid #f1f5f9;border-radius:8px;padding:10px;">
-                <div style="font-weight:800;margin-bottom:6px;">Storage (internal)</div>
-                {% if rich_summary.drives %}
-                  <div style="overflow:auto;">
-                    <table style="width:100%;border-collapse:collapse;">
-                      <tr style="text-align:left;border-bottom:1px solid #f1f5f9;">
-                        <th style="padding:4px 6px;">Device</th>
-                        <th style="padding:4px 6px;">Transport</th>
-                        <th style="padding:4px 6px;">Model</th>
-                        <th style="padding:4px 6px;">Serial</th>
-                        <th style="padding:4px 6px;">Size</th>
-                        <th style="padding:4px 6px;">SMART</th>
-                        <th style="padding:4px 6px;">POH</th>
-                        <th style="padding:4px 6px;">Temp</th>
-                      </tr>
-                      {% for d in rich_summary.drives %}
-                        <tr style="border-bottom:1px solid #f8fafc;">
-                          <td style="padding:4px 6px;">{{ d.path|default:d.name|default:"—" }}</td>
-                          <td style="padding:4px 6px;">{{ d.tran|default:"—" }}</td>
-                          <td style="padding:4px 6px;">{{ d.model|default:"—" }}</td>
-                          <td style="padding:4px 6px;">{{ d.serial|default:"—" }}</td>
-                          <td style="padding:4px 6px;">{{ d.size_human|default:"—" }}</td>
-                          <td style="padding:4px 6px;">{{ d.smart_overall_health|default:"—" }}</td>
-                          <td style="padding:4px 6px;">{{ d.smart_power_on_hours|default:"—" }}</td>
-                          <td style="padding:4px 6px;">{% if d.smart_temperature_c %}{{ d.smart_temperature_c }}°C{% else %}—{% endif %}</td>
-                        </tr>
-                      {% endfor %}
-                    </table>
-                  </div>
-                {% else %}
-                  <div style="color:#64748b;">No internal disks detected in lsblk.</div>
-                {% endif %}
-              </div>
-
-              <!-- Battery -->
-              <div style="flex:1 1 300px;min-width:300px;background:#fff;border:1px solid #f1f5f9;border-radius:8px;padding:10px;">
-                <div style="font-weight:800;margin-bottom:6px;">Battery</div>
-                {% if rich_summary.battery.present %}
-                  <div style="margin-bottom:6px;">
-                    {{ rich_summary.battery.vendor|default:"" }} {{ rich_summary.battery.model|default:"" }}
-                    {% if rich_summary.battery.serial %}<span style="color:#64748b;">(SN {{ rich_summary.battery.serial }})</span>{% endif %}
-                  </div>
-                  <div style="color:#64748b;margin-bottom:6px;">
-                    {% if rich_summary.battery.capacity_pct %}Health: {{ rich_summary.battery.capacity_pct|floatformat:1 }}%{% endif %}
-                    {% if rich_summary.battery.charge_cycles %} — Cycles: {{ rich_summary.battery.charge_cycles }}{% endif %}
-                  </div>
-                  <div style="color:#64748b;">State / Charge</div>
-                  <div>{{ rich_summary.battery.state|default:"—" }}{% if rich_summary.battery.percentage %} — {{ rich_summary.battery.percentage }}{% endif %}</div>
-                {% else %}
-                  <div style="color:#64748b;">No battery detected (or upower missing).</div>
-                {% endif %}
-              </div>
-
-              <!-- Display -->
-              <div style="flex:1 1 300px;min-width:300px;background:#fff;border:1px solid #f1f5f9;border-radius:8px;padding:10px;">
-                <div style="font-weight:800;margin-bottom:6px;">Display</div>
-                {% if rich_summary.display_panel.edid_summary %}
-                  <div style="margin-bottom:6px;">Panel: {{ rich_summary.display_panel.edid_summary }}</div>
-                {% endif %}
-                {% if rich_summary.graphics %}
-                  <div style="color:#64748b;margin-bottom:6px;">GPU(s)</div>
-                  <ul style="margin:0;padding-left:18px;color:#0f172a;">
-                    {% for g in rich_summary.graphics %}
-                      <li>
-                        {{ g.product|default:"—" }}
-                        {% if g.vendor %}<span style="color:#64748b;">({{ g.vendor }})</span>{% endif %}
-                        {% if g.resolution %}<span style="color:#64748b;">— {{ g.resolution }}</span>{% endif %}
-                      </li>
-                    {% endfor %}
-                  </ul>
-                {% else %}
-                  <div style="color:#64748b;">No display adapter detected.</div>
-                {% endif %}
-              </div>
-
-              <!-- Network -->
-              <div style="flex:1 1 100%;min-width:300px;background:#fff;border:1px solid #f1f5f9;border-radius:8px;padding:10px;">
-                <div style="font-weight:800;margin-bottom:6px;">Network</div>
-                {% if rich_summary.network %}
-                  <div style="overflow:auto;">
-                    <table style="width:100%;border-collapse:collapse;">
-                      <tr style="text-align:left;border-bottom:1px solid #f1f5f9;">
-                        <th style="padding:4px 6px;">Interface</th>
-                        <th style="padding:4px 6px;">Adapter</th>
-                        <th style="padding:4px 6px;">MAC</th>
-                        <th style="padding:4px 6px;">Driver</th>
-                      </tr>
-                      {% for n in rich_summary.network %}
-                        <tr style="border-bottom:1px solid #f8fafc;">
-                          <td style="padding:4px 6px;">{{ n.logicalname|default:"—" }}</td>
-                          <td style="padding:4px 6px;">{{ n.product|default:"—" }}</td>
-                          <td style="padding:4px 6px;">{{ n.mac|default:"—" }}</td>
-                          <td style="padding:4px 6px;">{{ n.driver|default:"—" }}</td>
-                        </tr>
-                      {% endfor %}
-                    </table>
-                  </div>
-                {% else %}
-                  <div style="color:#64748b;">No network adapters detected.</div>
-                {% endif %}
-              </div>
-            </div>
-          </div>
+        {% if hw.cpu.microcode %}
+        <div class="mt-1 text-xs opacity-70">Microcode: {{ hw.cpu.microcode }}</div>
         {% endif %}
-
-        <div style="margin-top:8px;">
-          <div style="font-weight:800;margin-bottom:6px;">Source Status</div>
-          <div style="overflow:auto;">
-            <table style="width:100%;border-collapse:collapse;">
-              <thead></thead>
-                <tr style="text-align:left;border-bottom:1px solid #e6edf3;">
-                  <th style="padding:6px 8px;">Source</th>
-                  <th style="padding:6px 8px;">RC</th>
-                  <th style="padding:6px 8px;">Stderr (truncated)</th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-                {% for src, st in latest_scan.raw_json.meta.status.items %}
-                  <tr style="border-bottom:1px solid #f1f5f9;">
-                    <td style="padding:6px 8px;font-weight:700;">{{ src }}</td>
-                    <td style="padding:6px 8px;">{{ st.rc }}</td>
-                    <td style="padding:6px 8px;color:#475569;max-width:60ch;"><pre style="white-space:pre-wrap;margin:0;padding:0;">{{ st.stderr|default:""|slice:":200" }}</pre></td>
-                  </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-        </div>
       </div>
-    {% endif %}
-
-    <!-- Drives -->
-    <div style="background:#fff;border:1px solid #e6edf3;border-radius:10px;padding:12px;margin-bottom:12px;">
-      <div style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:12px;">
-        <div style="font-weight:800;">Drives ({{ display_drives|length }})</div>
-        <div style="color:#64748b;font-size:0.95rem;">(Boot media excluded)</div>
-      </div>
-
-      {% if hard_drive_present %}
-        <div style="margin-top:10px;background:#fff7f7;border:1px solid #fecaca;color:#991b1b;padding:10px;border-radius:8px;">
-          <strong>Warning</strong>:</strong> First-class hard drive detected. Presume it contains data until processed.
-        </div>
-      {% endif %}
-
-      {% if display_drives %}
-        <div style="margin-top:10px;">
-          {% for drive in display_drives %}
-            <div style="border:1px solid #f1f5f9;border-radius:8px;padding:12px;margin-bottom:8px;background:#fff;">
-              <div style="font-weight:900;">{{ drive.model|default:"Unknown Model" }}</div>
-              <div style="color:#64748b;margin-top:6px;">{% if drive.capacity_human %}{{ drive.capacity_human }}{% endif %}{% if drive.logicalname %} — {{ drive.logicalname }}{% endif %}</div>
-              <div style="color:#64748b;margin-top:4px;">Serial: {{ drive.serial }}</div>
-              <div style="color:#64748b;margin-top:4px;">Status: {{ drive.get_status_display }}</div>
-            </div>
-          {% endfor %}
-        </div>
-      {% else %}
-        <div style="color:#64748b;">No drives detected.</div>
-      {% endif %}
     </div>
 
-    <!-- Activity -->
-    <div style="background:#fff;border:1px solid #e6edf3;border-radius:10px;padding:12px;">
-      <div style="font-weight:800;margin-bottom:8px;">Activity</div>
-      {% if touches %}
-        <ul style="list-style:none;padding:0;margin:0;">
-          {% for t in touches %}
-            <li style="padding:8px;border:1px solid #f1f5f9;border-radius:8px;margin-bottom:8px;">
-              <div style="font-weight:700;">{{ t.get_touch_type_display }}</div>
-              <div style="color:#64748b;">{{ t.touched_at|date:"Y-m-d H:i" }} — {{ t.touched_by.username }}</div>
-            </li>
-          {% endfor %}
-        </ul>
-      {% else %}
-        <div style="color:#64748b;">No activity yet.</div>
-      {% endif %}
+    <div class="card bg-base-100 shadow">
+      <div class="card-body p-4">
+        <div class="text-xs opacity-60">RAM</div>
+        <div class="font-semibold text-sm leading-snug">{{ hw.ram.total|default:"—" }}</div>
+      </div>
+    </div>
+
+    <div class="card bg-base-100 shadow">
+      <div class="card-body p-4">
+        <div class="text-xs opacity-60">GPU</div>
+        <div class="font-semibold text-sm leading-snug">{{ hw.gpu.model|default:"—" }}</div>
+        <div class="mt-2 flex items-center justify-between">
+          <div class="text-xs opacity-60">Driver</div>
+          <span class="badge badge-ghost">{{ hw.gpu.driver|default:"—" }}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card bg-base-100 shadow">
+      <div class="card-body p-4">
+        <div class="text-xs opacity-60">Display</div>
+        <div class="font-semibold text-sm leading-snug">{{ hw.display.panel|default:"—" }}</div>
+        <div class="mt-2 text-sm opacity-80">{{ hw.display.native|default:"—" }}</div>
+      </div>
+    </div>
+
+    <div class="card bg-base-100 shadow">
+      <div class="card-body p-4">
+        <div class="text-xs opacity-60">Battery</div>
+        <div class="font-semibold text-sm leading-snug">{{ hw.battery.model|default:"—" }}</div>
+        <div class="mt-2 text-sm opacity-80">{{ hw.battery.health|default:"—" }}</div>
+      </div>
+    </div>
+
+    <div class="card bg-base-100 shadow">
+      <div class="card-body p-4">
+        <div class="text-xs opacity-60">Wi‑Fi</div>
+        <div class="font-semibold text-sm leading-snug">{{ hw.wifi.model|default:"—" }}</div>
+        <div class="mt-2 flex items-center justify-between">
+          <div class="text-xs opacity-60">Driver</div>
+          <span class="badge badge-ghost">{{ hw.wifi.driver|default:"—" }}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card bg-base-100 shadow">
+      <div class="card-body p-4">
+        <div class="text-xs opacity-60">Ethernet</div>
+        <div class="font-semibold text-sm leading-snug">{{ hw.ethernet.model|default:"—" }}</div>
+        <div class="mt-2 text-xs opacity-80">
+          IF: {{ hw.ethernet.ifname|default:"—" }}<br>
+          MAC: {{ hw.ethernet.mac|default:"—" }}
+        </div>
+        <div class="mt-2 flex items-center justify-between">
+          <div class="text-xs opacity-60">Driver</div>
+          <span class="badge badge-ghost">{{ hw.ethernet.driver|default:"—" }}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card bg-base-100 shadow">
+      <div class="card-body p-4">
+        <div class="text-xs opacity-60">Thunderbolt</div>
+        <div class="font-semibold text-sm leading-snug">{{ hw.thunderbolt.model|default:"—" }}</div>
+        <div class="mt-2 flex items-center justify-between">
+          <div class="text-xs opacity-60">Driver</div>
+          <span class="badge badge-ghost">{{ hw.thunderbolt.driver|default:"—" }}</span>
+        </div>
+      </div>
     </div>
 
   </div>
+
+  <!-- Scan Health -->
+  <div class="card bg-base-100 shadow">
+    <div class="card-body p-4">
+      <h2 class="card-title text-lg">Scan Health</h2>
+
+      <div class="text-sm opacity-70">
+        Generated: {{ hw.scan.generated_at|default:"—" }}<br>
+        Scanner: {{ hw.scan.scanner|default:"—" }}
+      </div>
+
+      <div class="mt-3 overflow-x-auto">
+        <table class="table table-sm">
+          <thead>
+            <tr>
+              <th>Tool</th</thead></tr>>
+              <th>RC</th></th></th>
+              <th>St</th>derr (first line)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in hw.scan.health_rows %}
+            <tr></tbody></tr>
+              <td class="font-mono">{{ r.tool|default:"—" }}</td>
+              <td>{{ r.rc|default:"—" }}</td>
+              <td class="opacity-80">{{ r.stderr|default:"" }}</td>
+            </tr>
+            {% empty %}
+            <tr></tr>
+              <td colspan="3" class="opacity-70">—</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Upload (single) -->
+  <div id="upload" class="card bg-base-100 shadow">
+    <div class="card-body p-4">
+      <h2 class="card-title text-lg">Upload Scan Bundle</h2>
+
+      <form method="post" action="{% url 'asset_scan_upload' asset.asset_tag %}" enctype="multipart/form-data">
+        {% csrf_token %}
+
+        <div class="mt-2">
+          <label class="label">
+            <span class="label-text font-semibold">Scan bundle JSON file (motherboard.scan_bundle.v1)</span>
+          </label>
+          {{ upload_form.file }}
+        </div>
+
+        <div class="mt-2">
+          <label class="label">
+            <span class="label-text font-semibold">Notes (optional)</span>
+          </label>
+          {{ upload_form.user_notes }}
+        </div>
+
+        <div class="mt-4">
+          <button type="submit" class="btn btn-success">Upload</button>
+        </div>
+      </form>
+
+    </div>
+  </div>
+
 </div>
+{% endblock %}

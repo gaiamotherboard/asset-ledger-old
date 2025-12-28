@@ -8,6 +8,12 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
+    # Drive removals import (removed-before-scan)
+    path(
+        "drive-removals/import/",
+        views.drive_removals_import,
+        name="drive_removals_import",
+    ),
     # Home page
     path("", views.home, name="home"),
     # Asset detail (auto-creates on first visit)
@@ -18,11 +24,17 @@ urlpatterns = [
         views.asset_intake_update,
         name="asset_intake_update",
     ),
-    # Hardware scan upload
+    # Hardware scan upload (single asset)
     path(
         "asset/<str:asset_tag>/upload/",
         views.asset_scan_upload,
         name="asset_scan_upload",
+    ),
+    # Hardware scan upload (bulk: multiple files -> multiple assets)
+    path(
+        "asset/scan/bulk-upload/",
+        views.asset_scan_bulk_upload,
+        name="asset_scan_bulk_upload",
     ),
     # Drive status update
     path(

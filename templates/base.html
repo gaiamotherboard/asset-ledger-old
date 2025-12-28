@@ -1,0 +1,346 @@
+{% load static %}
+<!doctype html>
+<html lang="en" data-theme="light">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>{% block title %}Asset Control Panel{% endblock %}</title>
+
+        <!-- Tailwind + daisyUI (CDN) -->
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link
+            href="https://cdn.jsdelivr.net/npm/daisyui@2.51.5/dist/full.css"
+            rel="stylesheet"
+        />
+
+        <!-- Icons (used by existing templates) -->
+        <link
+            href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css"
+            rel="stylesheet"
+        />
+
+        {% block extra_head %}{% endblock %}
+    </head>
+
+    <body class="bg-slate-50 min-h-screen">
+        <!-- Top nav -->
+        <nav class="bg-white shadow-sm border-b border-slate-200">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="flex justify-between h-16">
+                    <div class="flex items-center gap-3">
+                        <a
+                            href="{% url 'home' %}"
+                            class="text-xl font-bold text-slate-800"
+                        >
+                            <i class="fas fa-box text-blue-600 mr-2"></i>
+                            Asset Control Panel
+                        </a>
+                    </div>
+
+                    <div class="flex items-center gap-3">
+                        {% if request.user.is_authenticated %}
+                        <span
+                            class="text-sm text-slate-600 hidden sm:inline-flex items-center"
+                        >
+                            <i class="fas fa-user mr-1"></i>
+                            {{ request.user.username }}
+                        </span>
+                        {% endif %}
+
+                        <!-- Theme switcher (daisyUI dropdown) -->
+                        <div class="dropdown dropdown-end">
+                            <label
+                                tabindex="0"
+                                class="btn btn-ghost btn-sm m-0 px-2 py-1"
+                            >
+                                <i class="fas fa-palette mr-2"></i>
+                                Theme
+                                <i class="fas fa-chevron-down ml-2 text-xs"></i>
+                            </label>
+
+                            <ul
+                                tabindex="0"
+                                class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-56 border border-base-200"
+                            >
+                                <li>
+                                    <button
+                                        type="button"
+                                        data-theme-value="light"
+                                    >
+                                        Light
+                                    </button>
+                                </li>
+                                <li>
+                                    <button
+                                        type="button"
+                                        data-theme-value="dark"
+                                    >
+                                        Dark
+                                    </button>
+                                </li>
+                                <li>
+                                    <button
+                                        type="button"
+                                        data-theme-value="cupcake"
+                                    >
+                                        Cupcake
+                                    </button>
+                                </li>
+                                <li>
+                                    <button
+                                        type="button"
+                                        data-theme-value="bumblebee"
+                                    >
+                                        Bumblebee
+                                    </button>
+                                </li>
+                                <li>
+                                    <button
+                                        type="button"
+                                        data-theme-value="emerald"
+                                    >
+                                        Emerald
+                                    </button>
+                                </li>
+                                <li>
+                                    <button
+                                        type="button"
+                                        data-theme-value="corporate"
+                                    >
+                                        Corporate
+                                    </button>
+                                </li>
+                                <li>
+                                    <button
+                                        type="button"
+                                        data-theme-value="synthwave"
+                                    >
+                                        Synthwave
+                                    </button>
+                                </li>
+                                <li>
+                                    <button
+                                        type="button"
+                                        data-theme-value="retro"
+                                    >
+                                        Retro
+                                    </button>
+                                </li>
+                                <li>
+                                    <button
+                                        type="button"
+                                        data-theme-value="cyberpunk"
+                                    >
+                                        Cyberpunk
+                                    </button>
+                                </li>
+                                <li>
+                                    <button
+                                        type="button"
+                                        data-theme-value="valentine"
+                                    >
+                                        Valentine
+                                    </button>
+                                </li>
+                                <li>
+                                    <button
+                                        type="button"
+                                        data-theme-value="garden"
+                                    >
+                                        Garden
+                                    </button>
+                                </li>
+                                <li>
+                                    <button
+                                        type="button"
+                                        data-theme-value="forest"
+                                    >
+                                        Forest
+                                    </button>
+                                </li>
+                                <li>
+                                    <button
+                                        type="button"
+                                        data-theme-value="aqua"
+                                    >
+                                        Aqua
+                                    </button>
+                                </li>
+                                <li>
+                                    <button
+                                        type="button"
+                                        data-theme-value="lofi"
+                                    >
+                                        Lofi
+                                    </button>
+                                </li>
+                                <li>
+                                    <button
+                                        type="button"
+                                        data-theme-value="pastel"
+                                    >
+                                        Pastel
+                                    </button>
+                                </li>
+                                <li>
+                                    <button
+                                        type="button"
+                                        data-theme-value="fantasy"
+                                    >
+                                        Fantasy
+                                    </button>
+                                </li>
+                                <li>
+                                    <button
+                                        type="button"
+                                        data-theme-value="wireframe"
+                                    >
+                                        Wireframe
+                                    </button>
+                                </li>
+                                <li>
+                                    <button
+                                        type="button"
+                                        data-theme-value="black"
+                                    >
+                                        Black
+                                    </button>
+                                </li>
+                                <li>
+                                    <button
+                                        type="button"
+                                        data-theme-value="luxury"
+                                    >
+                                        Luxury
+                                    </button>
+                                </li>
+                                <li>
+                                    <button
+                                        type="button"
+                                        data-theme-value="dracula"
+                                    >
+                                        Dracula
+                                    </button>
+                                </li>
+                                <li>
+                                    <button
+                                        type="button"
+                                        data-theme-value="cmyk"
+                                    >
+                                        CMYK
+                                    </button>
+                                </li>
+                                <li>
+                                    <button
+                                        type="button"
+                                        data-theme-value="autumn"
+                                    >
+                                        Autumn
+                                    </button>
+                                </li>
+                                <li>
+                                    <button
+                                        type="button"
+                                        data-theme-value="business"
+                                    >
+                                        Business
+                                    </button>
+                                </li>
+                                <li>
+                                    <button
+                                        type="button"
+                                        data-theme-value="acid"
+                                    >
+                                        Acid
+                                    </button>
+                                </li>
+                                <li>
+                                    <button
+                                        type="button"
+                                        data-theme-value="lemonade"
+                                    >
+                                        Lemonade
+                                    </button>
+                                </li>
+                                <li>
+                                    <button
+                                        type="button"
+                                        data-theme-value="night"
+                                    >
+                                        Night
+                                    </button>
+                                </li>
+                                <li>
+                                    <button
+                                        type="button"
+                                        data-theme-value="coffee"
+                                    >
+                                        Coffee
+                                    </button>
+                                </li>
+                                <li>
+                                    <button
+                                        type="button"
+                                        data-theme-value="winter"
+                                    >
+                                        Winter
+                                    </button>
+                                </li>
+                            </ul>
+                        </div>
+
+                        {% block nav_extra %}{% endblock %}
+                    </div>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Flash messages -->
+        {% if messages %}
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4 space-y-2">
+            {% for message in messages %}
+            <div
+                class="alert shadow {% if message.tags %}alert-{{ message.tags }}{% else %}alert-info{% endif %}"
+            >
+                <div>{{ message }}</div>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <!-- Page content -->
+        <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            {% block content %}{% endblock %}
+        </main>
+
+        <!-- Theme persistence -->
+        <script>
+            (function () {
+                const STORAGE_KEY = "assetledger.theme";
+                const root = document.documentElement;
+
+                function applyTheme(theme) {
+                    if (!theme) return;
+                    root.setAttribute("data-theme", theme);
+                }
+
+                // Load saved theme or keep whatever is on <html data-theme="...">
+                const saved = localStorage.getItem(STORAGE_KEY);
+                if (saved) applyTheme(saved);
+
+                // Wire dropdown buttons
+                document
+                    .querySelectorAll("[data-theme-value]")
+                    .forEach((btn) => {
+                        btn.addEventListener("click", () => {
+                            const theme = btn.getAttribute("data-theme-value");
+                            applyTheme(theme);
+                            localStorage.setItem(STORAGE_KEY, theme);
+                        });
+                    });
+            })();
+        </script>
+
+        {% block extra_js %}{% endblock %}
+    </body>
+</html>

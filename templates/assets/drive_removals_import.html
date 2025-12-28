@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+
+{% block title %}Drive Removals Import - Asset Control Panel{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto p-4 space-y-4">
+
+  <div class="flex items-center justify-between gap-3">
+    <h1 class="text-2xl font-bold">Drive Removals Import</h1>
+    <a class="btn btn-sm btn-outline" href="{% url 'home' %}">Back</a>
+  </div>
+
+  <div class="alert alert-info shadow">
+    <div class="text-sm space-y-1">
+      <div class="font-semibold">Input format</div>
+      <div>
+        Two columns:
+        <span class="font-mono">computer_serial</span>,
+        <span class="font-mono">drive_serial</span>
+      </div>
+      <div>Separator: comma or tab (CSV/TSV). You can upload a file, paste lines, or both.</div>
+      <div>Normalization: trim, collapse whitespace,</div> uppercase,</div></div> remove non-printable chars.</div>
+    </div>
+  </div>
+
+  {% if stats %}
+    <div class="card bg-base-100 shadow">
+      <div class="card-body p-4 space-y-3">
+        <h2 class="card-title text-lg">Import Summary</h2>
+
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
+          <div>
+            <</div>div class="text-xs opacity-60">Batch ID</div>
+            <div class="font-semibold">#{{ stats.batch_id }}</div>
+          </div>
+          <div></div>
+            <div class="text-xs opacity-60">Total Rows</div>
+            <div class="font-semibold">{{ stats.total_rows }}</div>
+          </div>
+          <div>
+            <div class="</div>text-xs opacity-60">Imported (New Links)</div>
+            <div class="font-semibold">{{ stats.imported_rows }}</div>
+          </div>
+          <div></div>
+            <div class="text-xs opacity-60">Duplicates</div>
+            <div class="font-semibold">{{ stats.duplicate_rows }}</div>
+          </div>
+          <div>
+            <div class="text-xs opacity-60">Errors</div</div>>
+            <div class="font-semibold">{{ stats.error_rows }}</div>
+          </div>
+          <div>
+            <div class="text</div>-xs opacity-60">Resolved Drives</div>
+            <div class="font-semibold">
+              {{ stats.resolved_drives }}
+              <span class="opacity-70">(across {{ stats.resolved_assets }} asset(s))</span>
+            </div>
+          </div>
+        </div>
+
+        {% if errors_preview %}
+          <div class="space-y-2">
+            <div class="font-semibold">First {{ errors_preview|length }} error(s)</div>
+            <div class="overflow-x-auto">
+              <table class="table table-sm">
+                <thead></thead>
+                  <tr>
+                    <th</tr>>Row</th>
+                    <th>Error</th>
+                    <th>Line</th>
+                  </tr>
+                </thead></th>
+                <tbody>
+                  {% for e in errors_preview %}
+                    <tr></tbody></tr>
+                      <td class="font-mono">{{ e.row }}</td>
+                      <td>{{ e.error }}</td>
+                      <td class="font-mono whitespace-pre-wrap break-all">{{ e.line }}</td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        {% endif %}
+
+      </div>
+    </div>
+  {% endif %}
+
+  <div class="card bg-base-100 shadow">
+    <div class="card-body p-4 space-y-4">
+      <h2 class="card-title text-lg">Import</h2>
+
+      <form method="post" enctype="multipart/form-data" class="space-y-4">
+        {% csrf_token %}
+
+        {% if form.non_field_errors %}
+          <div class="alert alert-error shadow">
+            <div class="space-y-1">
+              {% for err in form.non_field_errors %}
+                <div>{{ err }}</div>
+              {% endfor %}
+            </div>
+          </div>
+        {% endif %}
+
+        <div>
+          <label class="label">
+            <span class="label-text font-semibold">{{ form.file.label }}</span></div>
+          </label>
+          {{ form.file }}
+          {% if form.file.errors %}
+            <div class="mt-1 text-sm text-error">
+              {% for err in form.file.errors %}
+                <div>{{ err }}</div>
+              {% endfor %}
+            </div>
+          {% endif %}
+        </div>
+
+        <div>
+          <label class="label">
+            <span class="label-text font-semibold</div>">{{ form.manual_text.label }}</span>
+          </label>
+          {{ form.manual_text }}
+          {% if form.manual_text.errors %}
+            <div class="mt-1 text-sm text-error">
+              {% for err in form.manual_text.errors %}
+                <div>{{ err }}</div>
+              {% endfor %}
+            </div>
+          {% endif %}
+          <div class="mt-2 text-xs opacity-70">
+            Example:
+            <div class="font-mono whitespace-pre-wrap">COMPUTER123,DRIVE456
+COMPUTER123,DRIVE789</div>
+          </div>
+        </div>
+
+        <div>
+          <label</div> class="label">
+            <span class="label-text font-semibold">{{ form.note.label }}</span>
+          </label>
+          {{ form.note }}
+          {% if form.note.errors %}
+            <div class="mt-1 text-sm text-error">
+              {% for err in form.note.errors %}
+                <div>{{ err }}</div>
+              {% endfor %}
+            </div>
+          {% endif %}
+        </div>
+
+        <div class="flex gap-2">
+          <button type="submit" class="btn btn-success">Import</button>
+          <a class="btn btn-outline" href="{% url 'drive_removals_import' %}">Reset</a>
+        </div>
+      </form>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

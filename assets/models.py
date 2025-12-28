@@ -44,6 +44,11 @@ class Asset(models.Model):
         User, on_delete=models.PROTECT, related_name="assets_created"
     )
 
+    # Computer serial (from lshw "Device Serial Number", normalized at query time)
+    computer_serial = models.CharField(
+        max_length=200, blank=True, null=True, db_index=True
+    )
+
     # Intake information
     status = models.CharField(
         max_length=50, choices=STATUS_CHOICES, blank=True, default=""
@@ -134,6 +139,7 @@ class Drive(models.Model):
     STATUS_CHOICES = [
         ("present", "Present"),
         ("removed", "Removed"),
+        ("removed_before_scan", "Removed Before Scan"),
         ("wiped", "Wiped"),
         ("shredded", "Shredded"),
         ("returned_to_client", "Returned to Client"),
@@ -197,6 +203,81 @@ class Drive(models.Model):
         if self.serial.startswith("NOSERIAL-"):
             return "(no serial)"
         return f"(SN {self.serial})"
+
+
+class DriveRemovalBatch(models.Model):
+    """
+    One import session of removed-before-scan drive pairs.
+
+    Stores original upload / pasted text for audit + simple per-batch stats.
+    """
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, blank=True, null=True
+    )
+
+    original_file = models.FileField(upload_to="drive_removals/", blank=True, null=True)
+    original_filename = models.CharField(max_length=255, blank=True, default="")
+    manual_text = models.TextField(blank=True, default="")
+    note = models.TextField(blank=True, default="")
+
+    total_rows = models.PositiveIntegerField(default=0)
+    imported_rows = models.PositiveIntegerField(default=0)
+    duplicate_rows = models.PositiveIntegerField(default=0)
+    error_rows = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Drive Removal Batch"
+        verbose_name_plural = "Drive Removal Batches"
+
+    def __str__(self):
+        return f"DriveRemovalBatch {self.id} at {self.created_at}"
+
+
+class DriveRemovalLink(models.Model):
+    """
+    One logical pair (computer_serial, drive_serial), deduped for idempotency.
+
+    Later resolved to real Asset/Drive rows when possible.
+    """
+
+    computer_serial = models.CharField(max_length=200, db_index=True)  # normalized
+    drive_serial = models.CharField(max_length=200, db_index=True)  # normalized
+
+    first_seen_at = models.DateTimeField(auto_now_add=True)
+    last_seen_at = models.DateTimeField(auto_now=True)
+    seen_count = models.PositiveIntegerField(default=1)
+
+    last_batch = models.ForeignKey(
+        DriveRemovalBatch, on_delete=models.SET_NULL, blank=True, null=True
+    )
+
+    resolved_asset = models.ForeignKey(
+        Asset, on_delete=models.SET_NULL, blank=True, null=True
+    )
+    resolved_drive = models.ForeignKey(
+        "Drive", on_delete=models.SET_NULL, blank=True, null=True
+    )
+    resolved_at = models.DateTimeField(blank=True, null=True)
+
+    flagged_suspect = models.BooleanField(default=False)
+    flag_note = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["-last_seen_at"]
+        verbose_name = "Drive Removal Link"
+        verbose_name_plural = "Drive Removal Links"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["computer_serial", "drive_serial"],
+                name="uniq_drive_removal_pair",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.computer_serial} -> {self.drive_serial}"
 
 
 class AssetTouch(models.Model):

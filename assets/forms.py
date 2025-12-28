@@ -3,6 +3,8 @@ Django Forms for Asset Management
 These handle user input validation for intake forms and file uploads
 """
 
+import csv
+import io
 import json
 
 from django import forms
@@ -10,6 +12,7 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 
 from .models import Asset, Drive
+from .utils import norm_serial
 
 
 class AssetIntakeForm(forms.ModelForm):
@@ -193,3 +196,111 @@ class DriveStatusForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["status_note"].required = False
+
+
+class DriveRemovalImportForm(forms.Form):
+    """
+    Upload/paste a 2-column list of:
+      computer_serial, drive_serial
+
+    Accepts CSV or TSV (auto-detected by sniffing or simple fallback).
+    The view is responsible for creating DriveRemovalBatch + upserting DriveRemovalLink;
+    this form provides parsing helpers + validation.
+    """
+
+    file = forms.FileField(
+        label="CSV/TSV file (optional)",
+        required=False,
+        widget=forms.FileInput(
+            attrs={"class": "form-control", "accept": ".csv,.tsv,.txt"}
+        ),
+    )
+    manual_text = forms.CharField(
+        label="Paste lines (optional)",
+        required=False,
+        widget=forms.Textarea(
+            attrs={
+                "class": "form-control",
+                "rows": 10,
+                "placeholder": "computer_serial,drive_serial\nCOMPUTER123,DRIVE456\n...\n\nYou can also tab-separate columns.",
+            }
+        ),
+    )
+    note = forms.CharField(
+        label="Note (optional)",
+        required=False,
+        widget=forms.Textarea(attrs={"class": "form-control", "rows": 2}),
+    )
+
+    def clean(self):
+        cleaned = super().clean()
+        uploaded_file = cleaned.get("file")
+        manual_text = (cleaned.get("manual_text") or "").strip()
+
+        if not uploaded_file and not manual_text:
+            raise ValidationError(
+                "Provide either a file upload or pasted text (or both)."
+            )
+
+        return cleaned
+
+    def iter_pairs(self):
+        """
+        Yield tuples: (computer_serial_norm, drive_serial_norm, raw_line, row_index)
+
+        - For manual_text: row_index is 1-based line number.
+        - For file: row_index is 1-based CSV row number (including header if present).
+        """
+        uploaded_file = self.cleaned_data.get("file")
+        manual_text = self.cleaned_data.get("manual_text") or ""
+
+        if uploaded_file:
+            content = uploaded_file.read()
+            try:
+                text = content.decode("utf-8-sig")
+            except UnicodeDecodeError:
+                raise ValidationError("Upload must be UTF-8 text (CSV/TSV).")
+
+            # Reset file pointer so the view/model FileField save still works if needed.
+            try:
+                uploaded_file.seek(0)
+            except Exception:
+                pass
+
+            # Try sniffing delimiter; fall back to tab if file looks TSV, else comma.
+            sample = text[:4096]
+            delimiter = ","
+            try:
+                dialect = csv.Sniffer().sniff(sample, delimiters=",\t")
+                delimiter = dialect.delimiter
+            except Exception:
+                if "\t" in sample and "," not in sample:
+                    delimiter = "\t"
+
+            reader = csv.reader(io.StringIO(text), delimiter=delimiter)
+            for idx, row in enumerate(reader, start=1):
+                if not row:
+                    continue
+                # Support accidental extra columns; take first two only
+                c = row[0] if len(row) > 0 else ""
+                d = row[1] if len(row) > 1 else ""
+                cs = norm_serial(c)
+                ds = norm_serial(d)
+                raw_line = delimiter.join(row)
+                yield (cs, ds, raw_line, idx)
+
+        if manual_text:
+            for idx, line in enumerate(manual_text.splitlines(), start=1):
+                raw = line.rstrip("\n")
+                if not raw.strip():
+                    continue
+                # Accept comma or tab separators (prefer tab if present)
+                if "\t" in raw:
+                    parts = raw.split("\t")
+                else:
+                    parts = raw.split(",")
+                c = parts[0] if len(parts) > 0 else ""
+                d = parts[1] if len(parts) > 1 else ""
+                cs = norm_serial(c)
+                ds = norm_serial(d)
+                yield (cs, ds, raw, idx)
