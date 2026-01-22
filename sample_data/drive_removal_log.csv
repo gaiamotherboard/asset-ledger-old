@@ -1,0 +1,6 @@
+Timestamp,Client,Computer Serial Number,Drive Serial Number,Notes,Tech Email
+2024-01-14 09:00:00,Acme Corp,COMP001,ABC123XYZ,Standard removal,tech@acme.com
+2024-01-14 09:15:00,Acme Corp,COMP002,DEF456UVW,Standard removal,tech@acme.com
+2024-01-14 09:30:00,Acme Corp,www.example.com,GHI789RST,Computer serial is URL - should flag,tech@acme.com
+2024-01-14 09:45:00,Beta Inc,COMP003,ORPHAN999,Removed but never shredded,tech@beta.com
+2024-01-14 10:00:00,Acme Corp,COMP004,Z9919D52.,Drive with trailing punctuation,tech@acme.com

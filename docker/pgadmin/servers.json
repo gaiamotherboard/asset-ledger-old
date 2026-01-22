@@ -1,0 +1,14 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "Asset Ledger DB",
+      "Group": "Servers",
+      "Host": "db",
+      "Port": 5432,
+      "MaintenanceDB": "assetledger",
+      "Username": "ledger_user",
+      "PassFile": "/pgpassfile",
+      "SSLMode": "prefer"
+    }
+  }
+}

@@ -1,0 +1,104 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - ledger_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ../app
+      dockerfile: Dockerfile
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             gunicorn assetledger.wsgi:application --bind 0.0.0.0:8000 --workers 2"
+    ports:
+      - "0.0.0.0:8000:8000"
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY}
+      DJANGO_DEBUG: ${DJANGO_DEBUG}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS}
+      GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/google_sa.json
+      LEDGER_SHEETS_CONFIG: ${LEDGER_SHEETS_CONFIG}
+    volumes:
+      - ../secrets/google_sa.json:/run/secrets/google_sa.json:ro
+    networks:
+      - ledger_network
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  scheduler:
+    build:
+      context: ../app
+      dockerfile: Dockerfile
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             while true; do
+               echo \"[$(date)] Running pull_sheets...\";
+               python manage.py pull_sheets;
+               echo \"[$(date)] Running pipeline_run...\";
+               python manage.py pipeline_run;
+               echo \"[$(date)] Sleeping for $${PULL_INTERVAL_SECONDS} seconds...\";
+               sleep $${PULL_INTERVAL_SECONDS};
+             done"
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY}
+      GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/google_sa.json
+      LEDGER_SHEETS_CONFIG: ${LEDGER_SHEETS_CONFIG}
+      PULL_INTERVAL_SECONDS: ${PULL_INTERVAL_SECONDS:-900}
+    volumes:
+      - ../secrets/google_sa.json:/run/secrets/google_sa.json:ro
+    networks:
+      - ledger_network
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    profiles:
+      - tools
+    ports:
+      - "127.0.0.1:5050:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
+      PGADMIN_SERVER_JSON_FILE: /pgadmin4/servers.json
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: 'False'
+    volumes:
+      - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
+      - ../secrets/pgpassfile:/pgpassfile:ro
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - ledger_network
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+networks:
+  ledger_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  pgadmin_data:
